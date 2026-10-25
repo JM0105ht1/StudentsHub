@@ -10,4 +10,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f restante.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f continuar.sql
