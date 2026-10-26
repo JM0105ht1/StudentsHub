@@ -1,0 +1,17 @@
+name: Extrair projeto
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  extrair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Abrir o zip e guardar
+        run: |
+          unzip -q -o students-hub-atualizado.zip
+          git config user.name "extrair-bot"
+          git config user.email "extrair-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "Projeto extraído" || echo "nada a guardar"
+          git push
