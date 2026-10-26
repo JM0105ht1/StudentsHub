@@ -1,0 +1,31 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Nota: o timeout das funções NÃO é uma chave válida do netlify.toml.
+# Define-o no painel: Site configuration → Functions (máx. 26 s). O Gemini usa 18 s.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Redirecionamento de rotas de API para as Netlify Functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Redirecionamento SPA para React Router / Vite
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers de Segurança Estrita
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=()"

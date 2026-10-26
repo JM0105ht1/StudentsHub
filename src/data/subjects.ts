@@ -1,0 +1,58 @@
+import { SubjectInfo } from '../types';
+
+export const OFFICIAL_SUBJECTS: SubjectInfo[] = [
+  {
+    id: 'matematica-a',
+    name: 'Matemática A',
+    code: 'MAT A',
+    grade_level: '10º, 11º e 12º Anos',
+    color_badge: 'bg-blue-50 text-blue-700 border-blue-200',
+    color_border: 'border-blue-500',
+    description: 'Cálculo diferencial, trigonometria, probabilidades, sucessões e geometria analítica.',
+  },
+  {
+    id: 'fisica-quimica-a',
+    name: 'Física e Química A',
+    code: 'FQA',
+    grade_level: '10º e 11º Anos',
+    color_badge: 'bg-amber-50 text-amber-800 border-amber-200',
+    color_border: 'border-amber-500',
+    description: 'Mecânica, ondas, eletromagnetismo, transformações químicas e equilíbrio.',
+  },
+  {
+    id: 'filosofia',
+    name: 'Filosofia',
+    code: 'FIL',
+    grade_level: '10º e 11º Anos',
+    color_badge: 'bg-violet-50 text-violet-800 border-violet-200',
+    color_border: 'border-violet-500',
+    description: 'Ação humana, epistemologia, ética deontológica e utilitarista, filosofia da ciência.',
+  },
+  {
+    id: 'portugues',
+    name: 'Português',
+    code: 'PORT',
+    grade_level: '10º, 11º e 12º Anos',
+    color_badge: 'bg-rose-50 text-rose-800 border-rose-200',
+    color_border: 'border-rose-600',
+    description: 'Os Lusíadas, Mensagem, Fernando Pessoa e heterónimos, Memorial do Convento.',
+  },
+  {
+    id: 'ingles',
+    name: 'Inglês',
+    code: 'ING',
+    grade_level: '10º e 11º Anos',
+    color_badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    color_border: 'border-emerald-600',
+    description: 'The World of Work, Technology and Society, Global Citizenship and Culture.',
+  },
+  {
+    id: 'geometria-descritiva-a',
+    name: 'Geometria Descritiva A',
+    code: 'GDA',
+    grade_level: '10º e 11º Anos',
+    color_badge: 'bg-slate-100 text-slate-700 border-slate-300',
+    color_border: 'border-slate-500',
+    description: 'Projeções ortogonais, método de Monge, interseções de planos, sombras e sólidos.',
+  },
+];
