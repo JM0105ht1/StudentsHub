@@ -102,7 +102,7 @@ export function validateAndSanitizeOfficialHtml(rawHtml: string): HtmlValidation
   }
 
   const rawTrimmed = rawHtml.trim();
-  const rawSize = Buffer.byteLength(rawHtml, 'utf8');
+  const rawSize = new TextEncoder().encode(rawHtml).length;
 
   // 1. Verificação de tamanho
   if (rawSize === 0 || rawTrimmed.length === 0) {
@@ -145,6 +145,6 @@ export function validateAndSanitizeOfficialHtml(rawHtml: string): HtmlValidation
     sanitizedHtml,
     plainText,
     rawSize,
-    sanitizedSize: Buffer.byteLength(sanitizedHtml, 'utf8')
+    sanitizedSize: new TextEncoder().encode(sanitizedHtml).length
   };
 }
