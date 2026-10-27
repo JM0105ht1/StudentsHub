@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../services/authContext';
 import { Logo } from '../common/Logo';
+import { InstallButton } from './InstallButton';
 import {
   BookOpen,
   User,
@@ -127,6 +128,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
 
           {/* 3. Indicador de Sequência de Estudo e Menu de Conta */}
           <div className="flex items-center gap-3">
+            <InstallButton className="hidden lg:flex" />
             {userSession ? (
               <>
                 {/* Indicador de Sequência Discreto */}
@@ -310,6 +312,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
                 O Meu Perfil
               </button>
             )}
+            <InstallButton className="flex w-full justify-center mt-2" />
           </div>
         )}
       </div>

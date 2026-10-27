@@ -39,31 +39,87 @@ export interface HtmlValidationResult {
  */
 export const SANITIZER_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
+    // Estrutura do documento (para preservar o design original)
+    'html', 'head', 'body', 'style', 'link',
+    // Blocos e texto
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'p', 'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'u', 's',
+    'p', 'div', 'section', 'article', 'header', 'footer', 'nav', 'main', 'aside', 'center',
+    'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'u', 's', 'a', 'img', 'font',
     'blockquote', 'hr', 'code', 'pre', 'span', 'br',
-    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
     'sub', 'sup', 'mark', 'small', 'abbr', 'details', 'summary',
-    'dl', 'dt', 'dd', 'figure', 'figcaption'
+    'dl', 'dt', 'dd', 'figure', 'figcaption',
+    // Gráficos vetoriais simples (sem scripts)
+    'svg', 'g', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse',
+    'text', 'tspan', 'defs', 'lineargradient', 'radialgradient', 'stop', 'clippath'
   ],
   allowedAttributes: {
-    '*': ['class', 'id', 'title', 'lang', 'dir'],
-    'table': ['border', 'cellpadding', 'cellspacing'],
-    'th': ['colspan', 'rowspan', 'scope', 'align', 'valign'],
-    'td': ['colspan', 'rowspan', 'align', 'valign'],
-    'ol': ['start', 'type', 'reversed'],
-    'li': ['value'],
-    'details': ['open']
+    '*': ['class', 'id', 'title', 'lang', 'dir', 'style', 'role', 'aria-label', 'aria-hidden'],
+    a: ['href', 'name', 'target', 'rel'],
+    img: ['src', 'alt', 'width', 'height', 'loading'],
+    link: ['rel', 'href', 'type', 'media'],
+    style: ['media', 'type'],
+    font: ['color', 'size', 'face'],
+    table: ['border', 'cellpadding', 'cellspacing', 'width', 'align'],
+    th: ['colspan', 'rowspan', 'scope', 'align', 'valign', 'width', 'height'],
+    td: ['colspan', 'rowspan', 'align', 'valign', 'width', 'height'],
+    col: ['span', 'width'],
+    colgroup: ['span', 'width'],
+    ol: ['start', 'type', 'reversed'],
+    ul: ['type'],
+    li: ['value'],
+    details: ['open'],
+    svg: [
+      'viewbox', 'width', 'height', 'xmlns', 'fill', 'stroke', 'stroke-width',
+      'preserveaspectratio',
+    ],
+    g: ['fill', 'stroke', 'stroke-width', 'opacity', 'transform'],
+    path: ['d', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'opacity', 'fill-opacity', 'stroke-opacity', 'transform'],
+    circle: ['cx', 'cy', 'r', 'fill', 'stroke', 'stroke-width', 'opacity', 'transform'],
+    ellipse: ['cx', 'cy', 'rx', 'ry', 'fill', 'stroke', 'stroke-width', 'opacity', 'transform'],
+    rect: ['x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'stroke', 'stroke-width', 'opacity', 'transform'],
+    line: ['x1', 'y1', 'x2', 'y2', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-dasharray', 'opacity', 'transform'],
+    polyline: ['points', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'transform'],
+    polygon: ['points', 'fill', 'stroke', 'stroke-width', 'opacity', 'transform'],
+    text: ['x', 'y', 'fill', 'stroke', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'opacity', 'transform'],
+    tspan: ['x', 'y', 'dx', 'dy', 'fill', 'font-size', 'font-weight'],
+    lineargradient: ['x1', 'y1', 'x2', 'y2', 'gradientunits', 'gradienttransform'],
+    radialgradient: ['cx', 'cy', 'r', 'fx', 'fy', 'gradientunits', 'gradienttransform'],
+    stop: ['offset', 'stop-color', 'stop-opacity'],
+    clippath: [],
   },
+  // <style> é permitido para manter o design; o conteúdo é mostrado numa moldura isolada (iframe sandbox + CSP)
+  allowVulnerableTags: true,
+  // Texto destas tags (quando não permitidas) é descartado por completo
+  nonTextTags: ['script', 'textarea', 'option', 'noscript', 'title'],
   disallowedTagsMode: 'discard', // descarta por completo a tag e conteúdo não seguro
   allowedSchemes: ['http', 'https', 'mailto'],
-  allowedSchemesByTag: {},
+  allowedSchemesByTag: { img: ['http', 'https', 'data'] },
   allowProtocolRelative: false,
   enforceHtmlBoundary: true,
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', { target: '_blank', rel: 'noopener noreferrer' }),
+  },
+  // Só folhas de estilo HTTPS (ex.: Google Fonts); qualquer outro <link> é removido
+  exclusiveFilter: (frame) => {
+    if (frame.tag !== 'link') return false;
+    const rel = String(frame.attribs?.rel || '').toLowerCase();
+    const href = String(frame.attribs?.href || '').toLowerCase();
+    return !(rel.includes('stylesheet') && href.startsWith('https://'));
+  },
   parser: {
     lowerCaseTags: true
   }
 };
+
+/**
+ * O PostgreSQL rejeita padrões como "on...=" no HTML guardado. O "=" de preenchimento do base64
+ * (imagens embutidas) pode coincidir com esse padrão por acaso, por isso é retirado: os
+ * navegadores aceitam base64 sem preenchimento.
+ */
+export function stripBase64Padding(html: string): string {
+  return html.replace(/(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+)={1,2}/gi, '$1');
+}
 
 /**
  * Extrai texto limpo sem tags nem entidades HTML
@@ -124,7 +180,7 @@ export function validateAndSanitizeOfficialHtml(rawHtml: string): HtmlValidation
   // 3. Sanitização estrita
   let sanitizedHtml: string;
   try {
-    sanitizedHtml = sanitizeHtml(rawHtml, SANITIZER_OPTIONS);
+    sanitizedHtml = stripBase64Padding(sanitizeHtml(rawHtml, SANITIZER_OPTIONS));
   } catch (err: any) {
     return { valid: false, error: `Falha no processador de sanitização HTML: ${err?.message || 'HTML malformado'}` };
   }

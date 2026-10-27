@@ -1,3 +1,4 @@
+import { NoteHtmlFrame } from '../notes/NoteHtmlFrame';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../services/authContext';
 import { SubjectId } from '../../types';
@@ -989,14 +990,10 @@ export const AdminNotesManagement: React.FC = () => {
             </div>
 
             {/* Container sanitizado */}
-            <div className="p-6 border border-slate-200 rounded-xl bg-white max-h-[450px] overflow-y-auto">
-              <div
-                className="note-editorial-content space-y-4 text-slate-800 text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{
-                  __html:
-                    selectedNoteForAction.current_version?.sanitized_html ||
-                    '<p>Sem conteúdo.</p>',
-                }}
+            <div className="border border-slate-200 rounded-xl bg-white max-h-[450px] overflow-y-auto">
+              <NoteHtmlFrame
+                html={selectedNoteForAction.current_version?.sanitized_html || '<p>Sem conteúdo.</p>'}
+                minHeight={200}
               />
             </div>
 

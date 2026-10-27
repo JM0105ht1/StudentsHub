@@ -1,3 +1,4 @@
+import { NoteHtmlFrame } from './NoteHtmlFrame';
 import React, { useState, useEffect } from 'react';
 import { SubjectId } from '../../types';
 import { OFFICIAL_SUBJECTS } from '../../data/subjects';
@@ -334,12 +335,10 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
               </div>
 
               {/* Corpo do Apontamento: Renderizado EXCLUSIVAMENTE via sanitized_html */}
-              <div className="p-6 sm:p-10 bg-white">
-                <div
-                  className="note-editorial-content space-y-4 text-slate-800 text-sm leading-relaxed"
-                  dangerouslySetInnerHTML={{
-                    __html: selectedNote.current_version?.sanitized_html || '<p>Sem conteúdo disponível.</p>',
-                  }}
+              <div className="bg-white">
+                <NoteHtmlFrame
+                  html={selectedNote.current_version?.sanitized_html || '<p>Sem conteúdo disponível.</p>'}
+                  minHeight={300}
                 />
               </div>
 
