@@ -441,6 +441,84 @@ export const handler: Handler = async (event) => {
         };
       }
 
+      // APAGAR APONTAMENTO (e todas as suas versões)
+      case 'delete_note': {
+        const { note_id } = body;
+        if (!note_id || typeof note_id !== 'string') {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({ error: 'Identificador do apontamento (note_id) em falta.' }),
+          };
+        }
+
+        if (!supabase) {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({ success: true, note_id, message: 'Apontamento apagado com sucesso (mock).' }),
+          };
+        }
+
+        // Um apontamento publicado é despublicado primeiro, para o apagar de forma limpa
+        const { data: noteRow } = await supabase
+          .from('official_notes')
+          .select('id, is_published')
+          .eq('id', note_id)
+          .maybeSingle();
+
+        if (!noteRow) {
+          return {
+            statusCode: 404,
+            headers,
+            body: JSON.stringify({ error: 'Apontamento não encontrado.' }),
+          };
+        }
+
+        if (noteRow.is_published) {
+          await supabase.rpc('unpublish_official_note_atomic', { p_note_id: note_id });
+        }
+
+        const { data: deleted, error: deleteError } = await supabase
+          .from('official_notes')
+          .delete()
+          .eq('id', note_id)
+          .select('id');
+
+        if (deleteError) {
+          const msg = deleteError.message || '';
+          if (msg.includes('Rastreabilidade') || msg.toLowerCase().includes('referenc')) {
+            return {
+              statusCode: 409,
+              headers,
+              body: JSON.stringify({
+                error:
+                  'Este apontamento tem exercícios associados e não pode ser apagado. Podes despublicá-lo para deixar de aparecer aos alunos.',
+              }),
+            };
+          }
+          return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: `Erro ao apagar apontamento: ${msg}` }),
+          };
+        }
+
+        if (!deleted || deleted.length === 0) {
+          return {
+            statusCode: 403,
+            headers,
+            body: JSON.stringify({ error: 'Não foi possível apagar o apontamento (sem permissões ou já apagado).' }),
+          };
+        }
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ success: true, note_id, message: 'Apontamento apagado com sucesso.' }),
+        };
+      }
+
       // REATIVAR VERSÃO HISTÓRICA
       case 'reactivate_version': {
         const { note_id, version_id, reason } = body;
