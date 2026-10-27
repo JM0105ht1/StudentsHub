@@ -106,7 +106,7 @@ export async function getPublishedOfficialNotes(
         created_at,
         updated_at,
         current_version_id,
-        official_note_versions!current_version_id (
+        official_note_versions!official_notes_current_version_id_fkey (
           id,
           note_id,
           version_number,
@@ -189,7 +189,7 @@ export async function getAdminOfficialNotes(
         created_at,
         updated_at,
         current_version_id,
-        official_note_versions (
+        official_note_versions!official_note_versions_note_id_fkey (
           id,
           note_id,
           version_number,
