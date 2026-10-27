@@ -345,6 +345,36 @@ export async function publishOfficialNoteVersion(
 }
 
 /**
+ * Apagar apontamento oficial (e todas as suas versões)
+ */
+export async function deleteOfficialNote(
+  noteId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const response = await fetch('/.netlify/functions/admin-notes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ action: 'delete_note', note_id: noteId }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || `Erro HTTP ${response.status}`);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro ao apagar apontamento.' };
+  }
+}
+
+/**
  * Despublicar apontamento oficial
  */
 export async function unpublishOfficialNote(
