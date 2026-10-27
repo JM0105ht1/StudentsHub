@@ -193,7 +193,6 @@ export async function getAdminOfficialNotes(
           id,
           note_id,
           version_number,
-          raw_html,
           sanitized_html,
           plain_text_content,
           change_summary,
