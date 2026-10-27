@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { SubjectId } from '../../types';
 import { OFFICIAL_SUBJECTS } from '../../data/subjects';
 import { AcademicPeriod } from '../../lib/htmlSanitizer';
+import { useAuth } from '../../services/authContext';
 import {
   getPublishedOfficialNotes,
   OfficialNote,
@@ -17,6 +18,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Search,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface OfficialNotesReaderProps {
@@ -35,6 +38,45 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
   const [selectedNote, setSelectedNote] = useState<OfficialNote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Apontamentos que ESTE aluno escondeu do seu ecrã (não afeta mais ninguém)
+  const { userSession } = useAuth();
+  const hiddenStorageKey = `students-hub:apontamentos-ocultos:${userSession?.id || 'visitante'}`;
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  const [showHidden, setShowHidden] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(hiddenStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setHiddenIds(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : []);
+    } catch {
+      setHiddenIds([]);
+    }
+    setShowHidden(false);
+  }, [hiddenStorageKey]);
+
+  const saveHiddenIds = (ids: string[]) => {
+    setHiddenIds(ids);
+    try {
+      localStorage.setItem(hiddenStorageKey, JSON.stringify(ids));
+    } catch {
+      // armazenamento indisponível: a escolha vale só até recarregar a página
+    }
+  };
+
+  const hideNote = (noteId: string) => {
+    const next = hiddenIds.includes(noteId) ? hiddenIds : [...hiddenIds, noteId];
+    saveHiddenIds(next);
+    if (selectedNote?.id === noteId && !showHidden) {
+      const nextVisible = notes.find((n) => n.id !== noteId && !next.includes(n.id));
+      setSelectedNote(nextVisible || null);
+    }
+  };
+
+  const unhideNote = (noteId: string) => {
+    saveHiddenIds(hiddenIds.filter((id) => id !== noteId));
+  };
 
   const currentSubject =
     OFFICIAL_SUBJECTS.find((s) => s.id === selectedSubjectId) || OFFICIAL_SUBJECTS[0];
@@ -70,7 +112,10 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
   }, [selectedSubjectId, selectedPeriod]);
 
   // Filtragem local por texto
+  const hiddenCount = notes.filter((n) => hiddenIds.includes(n.id)).length;
+
   const filteredNotes = notes.filter((n) => {
+    if (!showHidden && hiddenIds.includes(n.id)) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -79,6 +124,13 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
       (n.current_version?.plain_text_content?.toLowerCase().includes(q) ?? false)
     );
   });
+
+  // Se o apontamento aberto for um dos ocultos, passa para o primeiro visível
+  useEffect(() => {
+    if (!showHidden && selectedNote && hiddenIds.includes(selectedNote.id)) {
+      setSelectedNote(notes.find((n) => !hiddenIds.includes(n.id)) || null);
+    }
+  }, [hiddenIds, showHidden, selectedNote, notes]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -193,6 +245,17 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
             </span>
           </div>
 
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              {showHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {showHidden ? 'Esconder os ocultos' : `Ver ocultos (${hiddenCount})`}
+            </button>
+          )}
+
           {isLoading ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-400">
               A carregar apontamentos oficiais homologados...
@@ -206,6 +269,8 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
               <p className="text-[11px] text-slate-400">
                 {searchQuery
                   ? 'Tenta ajustar a pesquisa textual ou o período letivo.'
+                  : notes.length > 0 && hiddenCount > 0
+                  ? 'Ocultaste todos os apontamentos desta disciplina. Toca em «Ver ocultos» para os voltares a mostrar.'
                   : 'Os apontamentos para esta disciplina serão publicados pelo administrador.'}
               </p>
             </div>
@@ -213,6 +278,7 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
             <div className="space-y-2 max-h-[750px] overflow-y-auto pr-1">
               {filteredNotes.map((note) => {
                 const isSelected = selectedNote?.id === note.id;
+                const isHidden = hiddenIds.includes(note.id);
                 const versionNumber = note.current_version?.version_number || 1;
 
                 return (
@@ -220,6 +286,8 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
                     key={note.id}
                     onClick={() => setSelectedNote(note)}
                     className={`p-4 rounded-xl border text-left cursor-pointer transition-all ${
+                      isHidden ? 'opacity-60 ' : ''
+                    }${
                       isSelected
                         ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                         : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:shadow-xs'
@@ -264,6 +332,26 @@ export const OfficialNotesReader: React.FC<OfficialNotesReaderProps> = ({
                         <ArrowRight className="w-3 h-3" />
                       </span>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isHidden) {
+                          unhideNote(note.id);
+                        } else {
+                          hideNote(note.id);
+                        }
+                      }}
+                      className={`mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                        isSelected
+                          ? 'border-white/20 text-white hover:bg-white/10'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      {isHidden ? 'Mostrar de novo' : 'Ocultar'}
+                    </button>
                   </div>
                 );
               })}
