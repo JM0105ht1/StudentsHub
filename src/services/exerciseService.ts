@@ -281,7 +281,14 @@ export async function startOfficialAssessment(
 
 export async function startPracticeSession(
   token: string,
-  params: { subject_id: string; academic_period?: string; count: number; question_type?: string; difficulty?: string }
+  params: {
+    subject_id: string;
+    academic_period?: string;
+    count?: number;
+    question_type?: string;
+    difficulty?: string;
+    type_counts?: Record<string, number>;
+  }
 ): Promise<{ success: boolean; session_id?: string; message?: string }> {
   return postOfficialSessions(token, { action: 'start_practice', ...params });
 }

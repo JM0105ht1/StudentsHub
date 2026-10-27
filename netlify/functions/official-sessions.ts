@@ -7,6 +7,8 @@ const jsonHeaders: Record<string, string> = { 'Content-Type': 'application/json'
 const PERIODS = ['P1', 'P2', 'P3'];
 const TYPES = ['multiple_choice', 'open_answer', 'calculation', 'true_false', 'mixed'];
 const DIFFICULTIES = ['facil', 'medio', 'dificil', 'mixed'];
+const COUNT_TYPES = ['multiple_choice', 'true_false', 'open_answer', 'calculation'];
+const MAX_EXERCISES = 20;
 
 const reply = (statusCode: number, body: unknown) => ({ statusCode, headers: jsonHeaders, body: JSON.stringify(body) });
 
@@ -93,7 +95,25 @@ export const handler: Handler = async (event) => {
     }
 
     if (body.action === 'start_practice') {
-      const count = Math.min(15, Math.max(1, parseInt(String(body.count ?? 5), 10) || 5));
+      const count = Math.min(MAX_EXERCISES, Math.max(1, parseInt(String(body.count ?? 5), 10) || 5));
+
+      // Quantidade por tipo de pergunta (ex.: { multiple_choice: 5, true_false: 3 })
+      let typeCounts: Record<string, number> | null = null;
+      if (body.type_counts && typeof body.type_counts === 'object' && !Array.isArray(body.type_counts)) {
+        const cleaned: Record<string, number> = {};
+        let total = 0;
+        for (const key of COUNT_TYPES) {
+          const n = Math.min(MAX_EXERCISES, Math.max(0, parseInt(String(body.type_counts[key] ?? 0), 10) || 0));
+          if (n > 0) {
+            cleaned[key] = n;
+            total += n;
+          }
+        }
+        if (total < 1 || total > MAX_EXERCISES) {
+          return reply(400, { error: `Escolhe entre 1 e ${MAX_EXERCISES} exercícios no total.` });
+        }
+        typeCounts = cleaned;
+      }
       const subject = typeof body.subject_id === 'string' ? body.subject_id.trim() : '';
       const period = PERIODS.includes(body.academic_period) ? body.academic_period : null;
       const qType = TYPES.includes(body.question_type) ? body.question_type : null;
@@ -106,6 +126,7 @@ export const handler: Handler = async (event) => {
         p_count: count,
         p_question_type: qType,
         p_difficulty: diff,
+        ...(typeCounts ? { p_type_counts: typeCounts } : {}),
       });
       if (error) {
         const none = (error.message || '').includes('Sem exercícios oficiais');

@@ -45,9 +45,21 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
 }) => {
   const { userSession } = useAuth();
   const [selectedSubjectId, setSelectedSubjectId] = useState<SubjectId>(initialSubjectId);
-  const [selectedType, setSelectedType] = useState<string>('multiple_choice');
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>('media');
-  const [questionCount, setQuestionCount] = useState<number>(5);
+  // Quantidade de perguntas por tipo (0 = não incluir). Total máximo: 20.
+  const MAX_TOTAL_QUESTIONS = 20;
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({
+    multiple_choice: 5,
+    true_false: 0,
+    open_answer: 0,
+    calculation: 0,
+  });
+  const totalQuestions: number = (Object.values(typeCounts) as number[]).reduce((a: number, b: number) => a + b, 0);
+  const setTypeCount = (typeId: string, value: number) => {
+    const others = totalQuestions - (typeCounts[typeId] || 0);
+    const clamped = Math.max(0, Math.min(value, MAX_TOTAL_QUESTIONS - others));
+    setTypeCounts((prev) => ({ ...prev, [typeId]: clamped }));
+  };
   const [selectedSource, setSelectedSource] = useState<string>(initialTestId || 'all');
 
   // Testes reais do utilizador obtidos da base de dados
@@ -118,10 +130,8 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
   const questionTypes = [
     { id: 'multiple_choice', label: 'Escolha múltipla' },
     { id: 'true_false', label: 'Verdadeiro / Falso' },
-    { id: 'short_answer', label: 'Resposta curta' },
-    { id: 'development', label: 'Desenvolvimento' },
+    { id: 'open_answer', label: 'Resposta aberta (curta / desenvolvimento)' },
     { id: 'calculation', label: 'Cálculo' },
-    { id: 'mixed', label: 'Misto' },
   ];
 
   const difficultyLevels = [
@@ -151,16 +161,11 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
         }
 
         // O servidor cria a sessão REAL e as cópias dos exercícios oficiais publicados
-        const typeMap: Record<string, string> = {
-          short_answer: 'open_answer',
-          development: 'open_answer',
-        };
         const diffMap: Record<string, string> = { facil: 'facil', media: 'medio', dificil: 'dificil', mista: 'mixed' };
 
         const started = await startPracticeSession(authToken, {
           subject_id: selectedSubjectId,
-          count: questionCount,
-          question_type: typeMap[selectedType] || selectedType,
+          type_counts: typeCounts,
           difficulty: diffMap[selectedDifficulty] || 'mixed',
         });
 
@@ -426,73 +431,89 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
           </div>
         </div>
 
-        {/* Tipo de Questão */}
+        {/* Quantidade por Tipo de Pergunta */}
+        <div className="space-y-3 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              3. Quantas perguntas de cada tipo?
+            </label>
+            <span
+              className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                totalQuestions === 0
+                  ? 'bg-rose-50 text-rose-700'
+                  : totalQuestions >= MAX_TOTAL_QUESTIONS
+                  ? 'bg-amber-50 text-amber-800'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              Total: {totalQuestions} / {MAX_TOTAL_QUESTIONS}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {questionTypes.map((type) => {
+              const value = typeCounts[type.id] || 0;
+              const maxForThis = value + (MAX_TOTAL_QUESTIONS - totalQuestions);
+              return (
+                <div
+                  key={type.id}
+                  className={`p-3.5 rounded-xl border transition-all ${
+                    value > 0 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-800">{type.label}</span>
+                    <span
+                      className={`min-w-[2rem] text-center text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                        value > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={MAX_TOTAL_QUESTIONS}
+                    value={value}
+                    onChange={(e) => setTypeCount(type.id, Math.min(parseInt(e.target.value, 10), maxForThis))}
+                    className="w-full accent-slate-900 cursor-pointer"
+                    aria-label={`Número de perguntas: ${type.label}`}
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                    <span>0</span>
+                    <span>10</span>
+                    <span>20</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Põe a 0 os tipos que não queres. O total máximo é de {MAX_TOTAL_QUESTIONS} perguntas.
+          </p>
+        </div>
+
+        {/* Dificuldade */}
         <div className="space-y-2 pt-2 border-t border-slate-100">
           <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-            3. Tipologia de Perguntas
+            4. Grau de Exigência / Dificuldade
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {questionTypes.map((type) => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {difficultyLevels.map((diff) => (
               <button
-                key={type.id}
+                key={diff.id}
                 type="button"
-                onClick={() => setSelectedType(type.id)}
-                className={`px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all text-left flex items-center justify-between ${
-                  selectedType === type.id
-                    ? 'border-slate-900 bg-slate-900 text-white shadow-xs font-bold'
+                onClick={() => setSelectedDifficulty(diff.id)}
+                className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
+                  selectedDifficulty === diff.id
+                    ? 'border-slate-900 bg-slate-900 text-white font-bold'
                     : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                <span>{type.label}</span>
-                {selectedType === type.id && <CheckCircle2 className="w-3.5 h-3.5" />}
+                {diff.label}
               </button>
             ))}
-          </div>
-        </div>
-
-        {/* Dificuldade & Quantidade */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t border-slate-100">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-              4. Grau de Exigência / Dificuldade
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {difficultyLevels.map((diff) => (
-                <button
-                  key={diff.id}
-                  type="button"
-                  onClick={() => setSelectedDifficulty(diff.id)}
-                  className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
-                    selectedDifficulty === diff.id
-                      ? 'border-slate-900 bg-slate-900 text-white font-bold'
-                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {diff.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-              5. Quantidade de Perguntas: {questionCount}
-            </label>
-            <div className="pt-2">
-              <input
-                type="range"
-                min="1"
-                max="15"
-                value={questionCount}
-                onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
-                className="w-full accent-slate-900 cursor-pointer"
-              />
-              <div className="flex justify-between text-[11px] text-slate-400 mt-1 font-mono">
-                <span>1 questão</span>
-                <span>5 questões</span>
-                <span>15 questões</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -510,11 +531,11 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
         {/* Botão de Criação / Início de Teste */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="text-xs text-slate-400">
-            Tempo estimado: {questionCount * 2} minutos
+            Tempo estimado: {totalQuestions * 2} minutos
           </span>
           <button
             type="button"
-            disabled={isGenerating}
+            disabled={isGenerating || totalQuestions < 1}
             onClick={handleStartWorkout}
             className="w-full sm:w-auto px-7 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 group cursor-pointer"
           >
