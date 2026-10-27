@@ -16,6 +16,7 @@ import {
   uploadOfficialNoteVersion,
   publishOfficialNoteVersion,
   unpublishOfficialNote,
+  deleteOfficialNote,
   reactivateHistoricalVersion,
   getOfficialNoteAuditLogs,
   OfficialNote,
@@ -24,6 +25,7 @@ import {
 } from '../../services/officialNotesService';
 import {
   ShieldAlert,
+  Trash2,
   ShieldCheck,
   Upload,
   Plus,
@@ -142,12 +144,17 @@ export const AdminNotesManagement: React.FC = () => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      setRawHtmlFileContent(content);
-      const val = validateAndSanitizeOfficialHtml(content);
-      setValidationResult(val);
-      if (!val.valid) {
-        setError(val.error || 'Ficheiro HTML inválido.');
+      try {
+        const content = event.target?.result as string;
+        setRawHtmlFileContent(content);
+        const val = validateAndSanitizeOfficialHtml(content);
+        setValidationResult(val);
+        if (!val.valid) {
+          setError(val.error || 'Ficheiro HTML inválido.');
+        }
+      } catch (err: any) {
+        setValidationResult({ valid: false, error: `Erro ao validar o ficheiro: ${err?.message || 'desconhecido'}` });
+        setError(`Erro ao validar o ficheiro: ${err?.message || 'desconhecido'}`);
       }
     };
     reader.readAsText(file, 'utf-8');
@@ -261,6 +268,21 @@ export const AdminNotesManagement: React.FC = () => {
       setError(res.error || 'Erro ao despublicar apontamento.');
     } else {
       setSuccessMessage('Apontamento oficial despublicado com sucesso.');
+      loadData();
+    }
+  };
+
+  // Apagar Apontamento
+  const handleDeleteNote = async (note: OfficialNote) => {
+    if (!window.confirm(`Apagar "${note.title}" definitivamente? Todas as versões serão eliminadas e não é possível desfazer.`)) {
+      return;
+    }
+    setError(null);
+    const res = await deleteOfficialNote(note.id);
+    if (!res.success) {
+      setError(res.error || 'Erro ao apagar apontamento.');
+    } else {
+      setSuccessMessage('Apontamento apagado com sucesso.');
       loadData();
     }
   };
@@ -609,6 +631,15 @@ export const AdminNotesManagement: React.FC = () => {
                             title="Carregar Nova Versão (.html)"
                           >
                             <Plus className="w-4 h-4" />
+                          </button>
+
+                          {/* Apagar */}
+                          <button
+                            onClick={() => handleDeleteNote(note)}
+                            className="p-1.5 rounded-lg text-red-600 hover:text-red-800 hover:bg-red-50 transition-colors"
+                            title="Apagar apontamento"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
 
                           {/* Histórico */}
