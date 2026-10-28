@@ -17,7 +17,6 @@ function buildSrcDoc(html: string): string {
     '<!doctype html><html lang="pt-PT"><head>' +
     '<meta charset="utf-8">' +
     `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
-    '<base target="_blank">' +
     '<style>img,svg,video{max-width:100%;height:auto}</style>' +
     '</head><body>' +
     html +
@@ -54,6 +53,21 @@ export const NoteHtmlFrame: React.FC<{
   const handleLoad = useCallback(() => {
     measure();
     const doc = iframeRef.current?.contentDocument;
+    // Âncoras internas (#secção): rolam até à secção dentro do apontamento, sem recarregar nada
+    doc?.addEventListener('click', (e: MouseEvent) => {
+      const link = (e.target as Element | null)?.closest?.('a');
+      const href = link?.getAttribute('href');
+      if (!link || !href || !href.startsWith('#')) return;
+      e.preventDefault();
+      let id = href.slice(1);
+      try {
+        id = decodeURIComponent(id);
+      } catch {
+        // mantém o id tal como está
+      }
+      const target = id ? doc.getElementById(id) : doc.body;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     // Imagens e tipos de letra que carregam depois mudam a altura
     doc?.addEventListener('load', measure, true);
     setTimeout(measure, 300);

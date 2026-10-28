@@ -54,7 +54,7 @@ export const SANITIZER_OPTIONS: sanitizeHtml.IOptions = {
     'text', 'tspan', 'defs', 'lineargradient', 'radialgradient', 'stop', 'clippath'
   ],
   allowedAttributes: {
-    '*': ['class', 'id', 'title', 'lang', 'dir', 'style', 'role', 'aria-label', 'aria-hidden'],
+    '*': ['class', 'id', 'title', 'lang', 'dir', 'style', 'role', 'aria-label', 'aria-hidden', 'data-l'],
     a: ['href', 'name', 'target', 'rel'],
     img: ['src', 'alt', 'width', 'height', 'loading'],
     link: ['rel', 'href', 'type', 'media'],
@@ -98,7 +98,14 @@ export const SANITIZER_OPTIONS: sanitizeHtml.IOptions = {
   allowProtocolRelative: false,
   enforceHtmlBoundary: true,
   transformTags: {
-    a: sanitizeHtml.simpleTransform('a', { target: '_blank', rel: 'noopener noreferrer' }),
+    // Ligações externas abrem noutro separador; âncoras internas (#secção) ficam no próprio apontamento
+    a: (tagName, attribs) => {
+      const href = String(attribs.href || '');
+      if (href.startsWith('#')) {
+        return { tagName, attribs };
+      }
+      return { tagName, attribs: { ...attribs, target: '_blank', rel: 'noopener noreferrer' } };
+    },
   },
   // Só folhas de estilo HTTPS (ex.: Google Fonts); qualquer outro <link> é removido
   exclusiveFilter: (frame) => {
