@@ -10,6 +10,8 @@ import {
   startPracticeSession,
   fetchSessionQuestions,
   toRunnerQuestions,
+  getPublishedExerciseCounts,
+  PublishedExerciseCount,
 } from '../../services/exerciseService';
 import { SessionResultData } from '../../types/exercises';
 import {
@@ -61,6 +63,22 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
     setTypeCounts((prev) => ({ ...prev, [typeId]: clamped }));
   };
   const [selectedSource, setSelectedSource] = useState<string>(initialTestId || 'all');
+
+  // Quantos exercícios publicados existem por tipo na disciplina escolhida
+  const [publishedCounts, setPublishedCounts] = useState<PublishedExerciseCount[]>([]);
+  useEffect(() => {
+    let active = true;
+    getPublishedExerciseCounts().then((rows) => {
+      if (active) setPublishedCounts(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const availableForType = (typeId: string): number =>
+    publishedCounts
+      .filter((r) => r.subject_id === selectedSubjectId && r.question_type === typeId)
+      .reduce((acc, r) => acc + r.count, 0);
 
   // Testes reais do utilizador obtidos da base de dados
   const [availableTests, setAvailableTests] = useState<TestOption[]>([]);
@@ -462,7 +480,12 @@ export const ExerciseGeneratorUI: React.FC<ExerciseGeneratorUIProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-800">{type.label}</span>
+                    <span className="text-xs font-bold text-slate-800">
+                      {type.label}
+                      <span className="ml-1.5 font-normal text-slate-400">
+                        ({availableForType(type.id)} disponíveis)
+                      </span>
+                    </span>
                     <span
                       className={`min-w-[2rem] text-center text-xs font-bold font-mono px-2 py-0.5 rounded ${
                         value > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'

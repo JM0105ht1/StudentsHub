@@ -12,6 +12,7 @@ import {
   SessionResultData,
   ExerciseStudentView,
 } from '../types/exercises';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 /**
  * Envia o pedido de geração grounded para /api/generate-exercises
@@ -305,4 +306,40 @@ export function toRunnerQuestions(questions: ExerciseStudentView[]) {
     maxPoints: q.max_points,
     sourceNoteRef: q.source_note_ref || 'Apontamentos Oficiais',
   }));
+}
+
+
+// ==============================================================================
+// Exercícios publicados (menu do ecrã principal): só disciplina e tipo, nunca as respostas
+// ==============================================================================
+
+export interface PublishedExerciseCount {
+  subject_id: string;
+  question_type: string;
+  count: number;
+}
+
+export async function getPublishedExerciseCounts(): Promise<PublishedExerciseCount[]> {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('subject_id, question_type')
+      .eq('is_official', true)
+      .eq('status', 'published')
+      .is('session_id', null)
+      .limit(2000);
+    if (error || !data) return [];
+
+    const map = new Map<string, PublishedExerciseCount>();
+    for (const row of data as { subject_id: string; question_type: string }[]) {
+      const key = `${row.subject_id}|${row.question_type}`;
+      const entry = map.get(key) || { subject_id: row.subject_id, question_type: row.question_type, count: 0 };
+      entry.count += 1;
+      map.set(key, entry);
+    }
+    return Array.from(map.values());
+  } catch {
+    return [];
+  }
 }

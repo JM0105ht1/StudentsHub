@@ -26,7 +26,7 @@ export function App() {
   // Defesa de interface: se alguém sem permissões ficar na aba de administração
   // (ex.: terminou sessão), volta ao início. A segurança real está no servidor/RLS.
   useEffect(() => {
-    if ((activeTab === 'admin-notes' || activeTab === 'exercises') && !isAdmin) setActiveTab('home');
+    if (activeTab === 'admin-notes' && !isAdmin) setActiveTab('home');
   }, [activeTab, isAdmin]);
 
   return (
@@ -54,14 +54,10 @@ export function App() {
         {activeTab === 'notes' && (
           <OfficialNotesReader
             initialSubjectId={selectedSubjectId}
-            onNavigateToExercises={
-              isAdmin
-                ? (subjId) => {
-                    setSelectedSubjectId(subjId);
-                    setActiveTab('exercises');
-                  }
-                : undefined
-            }
+            onNavigateToExercises={(subjId) => {
+              setSelectedSubjectId(subjId);
+              setActiveTab('exercises');
+            }}
           />
         )}
 
@@ -119,7 +115,7 @@ export function App() {
         )}
 
         {/* Área de Criação e Resolução de Exercícios */}
-        {activeTab === 'exercises' && isAdmin && (
+        {activeTab === 'exercises' && (
           <ExerciseGeneratorUI
             initialSubjectId={selectedSubjectId}
             onNavigateTab={setActiveTab}

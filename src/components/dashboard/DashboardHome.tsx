@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../services/authContext';
 import { OFFICIAL_SUBJECTS } from '../../data/subjects';
 import { SubjectId } from '../../types';
+import { getPublishedExerciseCounts, PublishedExerciseCount } from '../../services/exerciseService';
 import {
   BookOpen,
   CheckCircle2,
@@ -28,6 +29,30 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   const streakDays = userSession?.stats.streak_days || 0;
   const exercisesSolved = userSession?.stats.exercises_solved || 0;
   const isAdmin = userSession?.role === 'admin';
+
+  // Exercícios publicados pelo administrador (por disciplina e tipo)
+  const [exerciseCounts, setExerciseCounts] = useState<PublishedExerciseCount[]>([]);
+  const [exercisesLoaded, setExercisesLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    getPublishedExerciseCounts().then((rows) => {
+      if (active) {
+        setExerciseCounts(rows);
+        setExercisesLoaded(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [userSession?.id]);
+
+  const typeLabels: Record<string, string> = {
+    multiple_choice: 'Escolha múltipla',
+    true_false: 'Verdadeiro/Falso',
+    open_answer: 'Resposta aberta',
+    calculation: 'Cálculo',
+  };
+  const totalPublishedExercises = exerciseCounts.reduce((acc, r) => acc + r.count, 0);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto py-2">
@@ -157,6 +182,79 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
             <ChevronRight className="w-3.5 h-3.5" />
           </div>
         </button>
+      </div>
+
+      {/* Menu de Exercícios (todos os exercícios publicados pelo administrador) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-slate-500" />
+            <h2 className="text-base font-bold text-slate-900">Exercícios</h2>
+            {totalPublishedExercises > 0 && (
+              <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                {totalPublishedExercises}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('exercises')}
+            className="text-xs font-bold text-blue-900 hover:text-blue-700 flex items-center gap-1"
+          >
+            Treinar <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {exercisesLoaded && totalPublishedExercises === 0 ? (
+          <div className="p-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center">
+            <p className="text-xs font-bold text-slate-700">Ainda não há exercícios publicados</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Quando o administrador publicar exercícios, aparecem aqui por disciplina.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {OFFICIAL_SUBJECTS.map((subj) => {
+              const rows = exerciseCounts.filter((r) => r.subject_id === subj.id);
+              const total = rows.reduce((acc, r) => acc + r.count, 0);
+              if (exercisesLoaded && total === 0) return null;
+              return (
+                <button
+                  key={subj.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectSubject(subj.id);
+                    onNavigateTab('exercises');
+                  }}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-white text-left transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${subj.color_badge}`}>
+                      {subj.code}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900">
+                      {total} {total === 1 ? 'exercício' : 'exercícios'}
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 mt-2">{subj.name}</div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {rows.map((r) => (
+                      <span
+                        key={r.question_type}
+                        className="text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-full px-2 py-0.5"
+                      >
+                        {typeLabels[r.question_type] || r.question_type} · {r.count}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-xs font-bold text-slate-900 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    Praticar <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 3. Resumo de Progresso por Disciplina */}

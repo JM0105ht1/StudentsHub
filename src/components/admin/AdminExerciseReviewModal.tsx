@@ -59,8 +59,26 @@ export const AdminExerciseReviewModal: React.FC<AdminExerciseReviewModalProps> =
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Parâmetros do gerador
-  const [count, setCount] = useState<number>(3);
-  const [questionType, setQuestionType] = useState<string>('mixed');
+  // Quantidade por tipo de pergunta (0 = não gerar). Total máximo: 20.
+  const MAX_TOTAL = 20;
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({
+    multiple_choice: 3,
+    true_false: 0,
+    open_answer: 0,
+    calculation: 0,
+  });
+  const totalCount: number = (Object.values(typeCounts) as number[]).reduce((a: number, b: number) => a + b, 0);
+  const setTypeCount = (typeId: string, value: number) => {
+    const others = totalCount - (typeCounts[typeId] || 0);
+    const clamped = Math.max(0, Math.min(value, MAX_TOTAL - others));
+    setTypeCounts((prev) => ({ ...prev, [typeId]: clamped }));
+  };
+  const typeOptions = [
+    { id: 'multiple_choice', label: 'Escolha múltipla' },
+    { id: 'true_false', label: 'Verdadeiro / Falso' },
+    { id: 'open_answer', label: 'Resposta aberta' },
+    { id: 'calculation', label: 'Cálculo / Resolução' },
+  ];
   const [difficulty, setDifficulty] = useState<string>('medio');
 
   // Estado de edição de exercício
@@ -175,8 +193,7 @@ export const AdminExerciseReviewModal: React.FC<AdminExerciseReviewModalProps> =
         body: JSON.stringify({
           note_id: note.id,
           version_id: note.current_version_id,
-          count,
-          question_type: questionType,
+          type_counts: typeCounts,
           difficulty,
         }),
       });
@@ -190,7 +207,7 @@ export const AdminExerciseReviewModal: React.FC<AdminExerciseReviewModalProps> =
       if (data.code === 'INSUFFICIENT_NOTES_CONTENT') {
         setError(data.message || 'O apontamento oficial não contém matéria textual suficiente para formular questões.');
       } else {
-        setSuccessMessage(data.message || `${data.exercises?.length || count} exercícios gerados com sucesso em rascunho.`);
+        setSuccessMessage(data.message || `${data.exercises?.length || totalCount} exercícios gerados com sucesso em rascunho.`);
         await loadExercises();
         if (onExercisesUpdated) onExercisesUpdated();
       }
@@ -369,62 +386,83 @@ export const AdminExerciseReviewModal: React.FC<AdminExerciseReviewModalProps> =
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              {/* Quantidade */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Quantidade de Questões (1-10)
+            {/* Quantidade por tipo de pergunta */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  Quantas perguntas de cada tipo?
                 </label>
-                <select
-                  value={count}
-                  onChange={(e) => setCount(Number(e.target.value))}
-                  disabled={isGenerating}
-                  className="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
+                <span
+                  className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                    totalCount === 0
+                      ? 'bg-rose-50 text-rose-700'
+                      : totalCount >= MAX_TOTAL
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
                 >
-                  {[1, 2, 3, 5, 8, 10].map((n) => (
-                    <option key={n} value={n}>
-                      {n} {n === 1 ? 'exercício' : 'exercícios'}
-                    </option>
-                  ))}
-                </select>
+                  Total: {totalCount} / {MAX_TOTAL}
+                </span>
               </div>
 
-              {/* Tipologia */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tipologia de Questão
-                </label>
-                <select
-                  value={questionType}
-                  onChange={(e) => setQuestionType(e.target.value)}
-                  disabled={isGenerating}
-                  className="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
-                >
-                  <option value="mixed">Mista (Recomendada)</option>
-                  <option value="multiple_choice">Escolha Múltipla</option>
-                  <option value="true_false">Verdadeiro / Falso</option>
-                  <option value="open_answer">Resposta Aberta</option>
-                  <option value="calculation">Cálculo / Resolução</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {typeOptions.map((t) => {
+                  const value = typeCounts[t.id] || 0;
+                  const maxForThis = value + (MAX_TOTAL - totalCount);
+                  return (
+                    <div
+                      key={t.id}
+                      className={`p-3 rounded-xl border transition-all ${
+                        value > 0 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-800">{t.label}</span>
+                        <span
+                          className={`min-w-[2rem] text-center text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                            value > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {value}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={MAX_TOTAL}
+                        value={value}
+                        disabled={isGenerating}
+                        onChange={(e) => setTypeCount(t.id, Math.min(parseInt(e.target.value, 10), maxForThis))}
+                        className="w-full accent-slate-900 cursor-pointer"
+                        aria-label={`Número de perguntas: ${t.label}`}
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>0</span>
+                        <span>10</span>
+                        <span>20</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
 
-              {/* Dificuldade */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nível de Dificuldade
-                </label>
-                <select
-                  value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
-                  disabled={isGenerating}
-                  className="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
-                >
-                  <option value="medio">Média</option>
-                  <option value="facil">Fácil</option>
-                  <option value="dificil">Difícil</option>
-                  <option value="mixed">Mista</option>
-                </select>
-              </div>
+            {/* Dificuldade */}
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nível de Dificuldade
+              </label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value)}
+                disabled={isGenerating}
+                className="w-full text-xs rounded-lg border border-slate-300 p-2 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
+              >
+                <option value="medio">Média</option>
+                <option value="facil">Fácil</option>
+                <option value="dificil">Difícil</option>
+                <option value="mixed">Mista</option>
+              </select>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
@@ -433,7 +471,7 @@ export const AdminExerciseReviewModal: React.FC<AdminExerciseReviewModalProps> =
               </span>
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !note.is_published}
+                disabled={isGenerating || !note.is_published || totalCount < 1}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-xs"
               >
                 {isGenerating ? (

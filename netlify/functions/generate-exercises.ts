@@ -1,6 +1,6 @@
 import { Handler } from '@netlify/functions';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import * as crypto from 'crypto';
 import { authenticateRequest, isTestBypassAllowed } from './auth-check';
 import { getGeminiConfig } from './gemini-config';
@@ -71,9 +71,10 @@ export const handler: Handler = async (event) => {
   const {
     note_id,
     version_id,
-    count = 5,
-    question_type = 'mixed',
+    count: requestedCount = 5,
+    question_type: requestedType = 'mixed',
     difficulty = 'medio',
+    type_counts,
   } = body;
 
   // Validação do UUID do Apontamento Oficial
@@ -99,22 +100,62 @@ export const handler: Handler = async (event) => {
     cleanVersionId = version_id.trim();
   }
 
-  // Validação da Quantidade (1 a 15)
-  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 15) {
-    return {
-      statusCode: 400,
-      headers: jsonHeaders,
-      body: JSON.stringify({ error: 'A quantidade de exercícios deve ser um número inteiro entre 1 e 15.' }),
-    };
+  // Plano de geração: quantidade por tipo (type_counts) ou, em alternativa, quantidade + tipologia única
+  const MAX_EXERCISES = 20;
+  const COUNT_TYPES = ['multiple_choice', 'true_false', 'open_answer', 'calculation'];
+  const plan: { type: string; n: number }[] = [];
+
+  if (type_counts && typeof type_counts === 'object' && !Array.isArray(type_counts)) {
+    for (const key of COUNT_TYPES) {
+      const n = parseInt(String((type_counts as any)[key] ?? 0), 10) || 0;
+      if (n < 0 || n > MAX_EXERCISES) {
+        return {
+          statusCode: 400,
+          headers: jsonHeaders,
+          body: JSON.stringify({ error: `A quantidade por tipo deve estar entre 0 e ${MAX_EXERCISES}.` }),
+        };
+      }
+      if (n > 0) plan.push({ type: key, n });
+    }
+  } else {
+    if (typeof requestedCount !== 'number' || !Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > MAX_EXERCISES) {
+      return {
+        statusCode: 400,
+        headers: jsonHeaders,
+        body: JSON.stringify({ error: `A quantidade de exercícios deve ser um número inteiro entre 1 e ${MAX_EXERCISES}.` }),
+      };
+    }
+    if (typeof requestedType !== 'string' || !VALID_QUESTION_TYPES.includes(requestedType.toLowerCase().trim())) {
+      return {
+        statusCode: 400,
+        headers: jsonHeaders,
+        body: JSON.stringify({ error: `Tipo de questão não suportado: "${requestedType}".` }),
+      };
+    }
+    const t = requestedType.toLowerCase().trim();
+    plan.push({ type: t === 'short_answer' || t === 'development' ? 'open_answer' : t, n: requestedCount });
   }
 
-  // Validação de Tipologia
-  if (typeof question_type !== 'string' || !VALID_QUESTION_TYPES.includes(question_type.toLowerCase().trim())) {
+  const count = plan.reduce((acc, p) => acc + p.n, 0);
+  if (count < 1 || count > MAX_EXERCISES) {
     return {
       statusCode: 400,
       headers: jsonHeaders,
-      body: JSON.stringify({ error: `Tipo de questão não suportado: "${question_type}".` }),
+      body: JSON.stringify({ error: `Escolhe entre 1 e ${MAX_EXERCISES} exercícios no total.` }),
     };
+  }
+  const question_type = plan.length === 1 ? plan[0].type : 'mixed';
+
+  // Lotes pequenos (até 5 exercícios) pedidos ao Gemini em paralelo: muito mais rápido do que um pedido grande
+  const CHUNK_SIZE = 5;
+  const tasks: { type: string; n: number }[] = [];
+  for (const item of plan) {
+    let left = item.n;
+    while (left > 0) {
+      const n = Math.min(CHUNK_SIZE, left);
+      tasks.push({ type: item.type, n });
+      left -= n;
+    }
   }
 
   // Validação de Dificuldade
@@ -289,6 +330,7 @@ export const handler: Handler = async (event) => {
 
   // 6. Chamada Segura ao Modelo Google Gemini
   let rawAiOutput: any;
+  let failedChunks = 0;
 
   // Suporte de Mock determinístico para ambiente de testes automatizados
   if (isTestBypassAllowed() && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'test-mock-gemini-key')) {
@@ -326,16 +368,22 @@ export const handler: Handler = async (event) => {
     const geminiConfig = getGeminiConfig();
     const ai = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
 
-    const userPrompt = `
+    // Máximo de 24 s por lote (as Netlify Functions terminam aos 26 s)
+    const envTimeout = process.env.GEMINI_TIMEOUT_MS ? parseInt(process.env.GEMINI_TIMEOUT_MS, 10) : NaN;
+    const GEMINI_TIMEOUT_MS = Math.min(Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 22_000, 24_000);
+
+    const runChunk = async (task: { type: string; n: number }, index: number) => {
+      const userPrompt = `
 <<<METADATA_PEDIDO>>>
 Disciplina: ${noteRecord.subject_id}
 Período: ${noteRecord.academic_period}
 Tema Oficial: ${noteRecord.theme}
 Título do Apontamento: ${noteRecord.title}
 Versão Homologada: v${versionRecord.version_number}
-Tipologia Solicitada: ${question_type}
+Tipologia Solicitada: ${task.type}
 Dificuldade Pedida: ${difficulty}
-Quantidade de Questões: ${count}
+Quantidade de Questões: ${task.n}
+Lote ${index + 1} de ${tasks.length}: cobre aspetos diferentes do texto, sem repetir perguntas de outros lotes.
 Hash de Integridade do Conteúdo: ${contentHash}
 <<<END_METADATA>>>
 
@@ -344,43 +392,53 @@ ${officialContentText}
 <<<END_OFFICIAL_NOTE>>>
 
 INSTRUÇÕES FINAIS:
-Gera exatamente ${count} exercício(s) fundamentado(s) EXCLUSIVAMENTE no texto oficial acima.
+Gera exatamente ${task.n} exercício(s) do tipo "${task.type}", fundamentado(s) EXCLUSIVAMENTE no texto oficial acima.
 Cada exercício deve conter "quote_excerpt" com um excerto literal idêntico ao texto oficial.
 Se a matéria for insuficiente para formular perguntas sem recorrer a conhecimento externo, define "insufficient_content": true. NUNCA INVENTES.
 `.trim();
 
-    const GEMINI_TIMEOUT_MS = process.env.GEMINI_TIMEOUT_MS
-      ? parseInt(process.env.GEMINI_TIMEOUT_MS, 10)
-      : 18_000; // 18s: deixa margem face ao timeout de 26s das Netlify Functions
+      let timeoutHandle: any;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          const err: any = new Error('O motor Gemini excedeu o tempo limite de resposta (timeout).');
+          err.name = 'TimeoutError';
+          err.code = 'GEMINI_TIMEOUT';
+          reject(err);
+        }, GEMINI_TIMEOUT_MS);
+      });
 
-    let timeoutHandle: any;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutHandle = setTimeout(() => {
-        const err: any = new Error('O motor Gemini excedeu o tempo limite de resposta (timeout).');
-        err.name = 'TimeoutError';
-        err.code = 'GEMINI_TIMEOUT';
-        reject(err);
-      }, GEMINI_TIMEOUT_MS);
-    });
+      try {
+        const response: any = await Promise.race([
+          ai.models.generateContent({
+            model: geminiConfig.model,
+            contents: userPrompt,
+            config: {
+              systemInstruction: OFFICIAL_EXERCISE_SYSTEM_INSTRUCTION,
+              responseMimeType: 'application/json',
+              // Gemini 3: raciocínio "low" (rápido) e temperatura por defeito (recomendada pela Google)
+              thinkingConfig: { thinkingLevel: (ThinkingLevel as any)?.LOW ?? 'LOW' },
+              maxOutputTokens: 2048 + task.n * 800,
+            },
+          }),
+          timeoutPromise,
+        ]);
+        return JSON.parse(response.text || '{}');
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+    };
 
-    const geminiCallPromise = ai.models.generateContent({
-      model: geminiConfig.model,
-      contents: userPrompt,
-      config: {
-        systemInstruction: OFFICIAL_EXERCISE_SYSTEM_INSTRUCTION,
-        responseMimeType: 'application/json',
-        temperature: 0.2, // Baixa temperatura para consistência e obediência factual estrita
-        maxOutputTokens: 4096 + count * 600, // Teto de custo proporcional ao número de questões (máx. 15)
-      },
-    });
+    const settled = await Promise.allSettled(tasks.map((t, i) => runChunk(t, i)));
+    const okOutputs: any[] = [];
+    let firstError: any = null;
+    for (const r of settled) {
+      if (r.status === 'fulfilled') okOutputs.push(r.value);
+      else if (!firstError) firstError = r.reason;
+    }
+    failedChunks = settled.length - okOutputs.length;
 
-    try {
-      const response: any = await Promise.race([geminiCallPromise, timeoutPromise]);
-      clearTimeout(timeoutHandle);
-      const responseText = response.text || '{}';
-      rawAiOutput = JSON.parse(responseText);
-    } catch (err: any) {
-      clearTimeout(timeoutHandle);
+    if (okOutputs.length === 0) {
+      const err: any = firstError || {};
       console.error('Falha na invocação da API Gemini:', err?.message || err);
 
       if (err.code === 'GEMINI_TIMEOUT' || err.name === 'TimeoutError') {
@@ -388,12 +446,11 @@ Se a matéria for insuficiente para formular perguntas sem recorrer a conhecimen
           statusCode: 504,
           headers: jsonHeaders,
           body: JSON.stringify({
-            error: 'O motor Gemini excedeu o tempo limite de resposta (timeout). Nenhum exercício foi persistido.',
+            error: 'O motor Gemini demorou demasiado a responder. Tenta com menos exercícios ou volta a tentar daqui a pouco. Nenhum exercício foi guardado.',
             code: 'GATEWAY_TIMEOUT',
           }),
         };
       }
-
       if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
         return {
           statusCode: 429,
@@ -404,27 +461,43 @@ Se a matéria for insuficiente para formular perguntas sem recorrer a conhecimen
           }),
         };
       }
-
       if (err?.status >= 500 || err?.message?.includes('500') || err?.message?.includes('503')) {
         return {
           statusCode: 502,
           headers: jsonHeaders,
           body: JSON.stringify({
-            error: 'O serviço Gemini está temporariamente indisponível. Nenhum exercício foi persistido.',
+            error: 'O serviço Gemini está temporariamente indisponível. Nenhum exercício foi guardado.',
             code: 'GEMINI_UNAVAILABLE',
           }),
         };
       }
-
       return {
         statusCode: 502,
         headers: jsonHeaders,
         body: JSON.stringify({
-          error: 'Falha na comunicação com o motor Gemini. Por favor, tente novamente.',
+          error: `Falha na comunicação com o motor Gemini${err?.message ? `: ${String(err.message).slice(0, 200)}` : ''}. Tenta novamente.`,
           code: 'GEMINI_GATEWAY_ERROR',
         }),
       };
     }
+
+    // Junta os lotes e remove enunciados repetidos
+    const seenPrompts = new Set<string>();
+    const mergedExercises: any[] = [];
+    for (const out of okOutputs) {
+      for (const ex of Array.isArray(out?.exercises) ? out.exercises : []) {
+        const key = String(ex?.prompt || '').trim().toLowerCase();
+        if (key && !seenPrompts.has(key)) {
+          seenPrompts.add(key);
+          mergedExercises.push(ex);
+        }
+      }
+    }
+    rawAiOutput = {
+      insufficient_content: mergedExercises.length === 0 && okOutputs.every((o) => o?.insufficient_content === true),
+      reason: okOutputs.find((o) => o?.reason)?.reason || '',
+      exercises: mergedExercises,
+    };
   }
 
   // 7. Validação Rigorosa de Grounding e Citações Literais
@@ -458,45 +531,49 @@ Se a matéria for insuficiente para formular perguntas sem recorrer a conhecimen
   // - Uma única RPC (uma transação PostgreSQL): exercícios + proveniência de TODO o lote ou nada.
   // - Sem fallbacks por item: um fallback criaria lotes parciais e escritas fora da transação.
   // - status = 'draft': ocultos dos alunos até revisão e publicação pelo administrador.
-  const { data: batchResult, error: batchRpcErr } = await supabase.rpc(
-    'create_official_exercise_batch_with_provenance',
-    {
-      p_user_id: verifiedAdminId,
-      p_official_note_id: noteRecord.id,
-      p_official_version_id: versionRecord.id,
-      p_content_hash: contentHash,
-      p_exercises: validationResult.exercises,
-      p_atomic: true,
+  // A função da base de dados aceita até 15 por lote: acima disso grava em 2 lotes
+  const allExercises = validationResult.exercises;
+  const groups: (typeof allExercises)[] = [];
+  if (allExercises.length > 15) {
+    const half = Math.ceil(allExercises.length / 2);
+    groups.push(allExercises.slice(0, half), allExercises.slice(half));
+  } else {
+    groups.push(allExercises);
+  }
+
+  const insertedIds: string[] = [];
+  for (const group of groups) {
+    const { data: batchResult, error: batchRpcErr } = await supabase.rpc(
+      'create_official_exercise_batch_with_provenance',
+      {
+        p_user_id: verifiedAdminId,
+        p_official_note_id: noteRecord.id,
+        p_official_version_id: versionRecord.id,
+        p_content_hash: contentHash,
+        p_exercises: group,
+        p_atomic: true,
+      }
+    );
+
+    const ids: string[] = (batchResult && batchResult.inserted_ids) || [];
+    if (batchRpcErr || ids.length !== group.length) {
+      console.error('Lote de exercícios revertido:', batchRpcErr?.message || 'contagem inconsistente');
+      if (insertedIds.length === 0) {
+        return {
+          statusCode: 500,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            error: 'A gravação do lote falhou e foi revertida por inteiro. Nenhum exercício foi guardado.',
+            code: 'TRANSACTION_ROLLBACK',
+          }),
+        };
+      }
+      break; // o primeiro lote já foi gravado: devolve o que ficou guardado
     }
-  );
-
-  if (batchRpcErr) {
-    console.error('Lote de exercícios revertido:', batchRpcErr.message);
-    return {
-      statusCode: 500,
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        error: 'A gravação do lote falhou e foi revertida por inteiro. Nenhum exercício foi guardado.',
-        code: 'TRANSACTION_ROLLBACK',
-      }),
-    };
+    insertedIds.push(...ids);
   }
 
-  const insertedIds: string[] = (batchResult && batchResult.inserted_ids) || [];
-  if (insertedIds.length !== validationResult.exercises.length) {
-    // Nunca inventar IDs: se a contagem não bate, o resultado é tratado como falha
-    console.error('Contagem de exercícios gravados inconsistente com o lote validado.');
-    return {
-      statusCode: 500,
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        error: 'Resposta inconsistente da base de dados ao gravar o lote.',
-        code: 'BATCH_COUNT_MISMATCH',
-      }),
-    };
-  }
-
-  const savedExercises = validationResult.exercises.map((ex, idx) => ({
+  const savedExercises = allExercises.slice(0, insertedIds.length).map((ex, idx) => ({
     id: insertedIds[idx],
     prompt: ex.prompt,
     question_type: ex.question_type,
@@ -511,12 +588,17 @@ Se a matéria for insuficiente para formular perguntas sem recorrer a conhecimen
     official_version_id: versionRecord.id,
   }));
 
+  const partialWarning =
+    failedChunks > 0 || savedExercises.length < count
+      ? ` Pediste ${count}, mas só ${savedExercises.length} passaram na validação; gera de novo para completar.`
+      : '';
+
   return {
     statusCode: 200,
     headers: jsonHeaders,
     body: JSON.stringify({
       success: true,
-      message: `${savedExercises.length} exercício(s) oficial(ais) gerado(s) com sucesso em rascunho. Aguardam revisão e publicação pelo administrador.`,
+      message: `${savedExercises.length} exercício(s) oficial(ais) gerado(s) com sucesso em rascunho. Aguardam revisão e publicação pelo administrador.${partialWarning}`,
       note_title: noteRecord.title,
       version_number: versionRecord.version_number,
       subject_id: noteRecord.subject_id,

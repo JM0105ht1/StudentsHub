@@ -80,7 +80,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
             >
               Disciplinas
             </button>
-            {userSession?.role === 'admin' && (
             <button
               onClick={() => handleNavClick('exercises')}
               className={`px-3 py-1.5 rounded-lg transition-colors ${
@@ -91,7 +90,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
             >
               Exercícios
             </button>
-            )}
             <button
               onClick={() => handleNavClick('exam')}
               className={`px-3 py-1.5 rounded-lg transition-colors ${
@@ -264,7 +262,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
             >
               Disciplinas
             </button>
-            {userSession?.role === 'admin' && (
             <button
               onClick={() => handleNavClick('exercises')}
               className={`w-full text-left px-3 py-2 rounded-lg ${
@@ -273,7 +270,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, onOpenA
             >
               Exercícios
             </button>
-            )}
             <button
               onClick={() => handleNavClick('exam')}
               className={`w-full text-left px-3 py-2 rounded-lg ${
